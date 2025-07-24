@@ -171,7 +171,32 @@ class PureSwinIRModel(BaseModel):
 
         # Setup optimizers - ONLY FOR GENERATOR
         self.setup_optimizers()
-        self.setup_schedulers()
+        # Setup scheduler manually since CosineAnnealingLR is not in BasicSR
+        train_opt = self.opt['train']
+        if 'scheduler' in train_opt:
+            scheduler_type = train_opt['scheduler']['type']
+            if scheduler_type == 'CosineAnnealingLR':
+                from torch.optim.lr_scheduler import CosineAnnealingLR
+                self.schedulers.append(
+                    CosineAnnealingLR(
+                        self.optimizer_g,
+                        T_max=train_opt['scheduler']['T_max'],
+                        eta_min=train_opt['scheduler']['eta_min']
+                    )
+                )
+            elif scheduler_type == 'MultiStepLR':
+                from torch.optim.lr_scheduler import MultiStepLR
+                self.schedulers.append(
+                    MultiStepLR(
+                        self.optimizer_g,
+                        milestones=train_opt['scheduler']['milestones'],
+                        gamma=train_opt['scheduler']['gamma']
+                    )
+                )
+            else:
+                print(f"Warning: Scheduler {scheduler_type} not implemented, training without scheduler")
+        else:
+            print("No scheduler configured, training with constant learning rate")
 
     def setup_optimizers(self):
         """Set up optimizer for generator only"""

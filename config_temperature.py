@@ -73,7 +73,7 @@ train = {
         'betas': [0.9, 0.99]
     },
     # REMOVED optim_d
-    '''
+
     'scheduler': {
         'type': 'CosineAnnealingLR',
         'T_max': 100000,
@@ -85,6 +85,7 @@ train = {
         'milestones': [50000, 100000],
         'gamma': 0.5
     },
+    '''
     # Loss functions - REMOVED gan_opt
     'pixel_opt': {
         'type': 'PhysicsConsistencyLoss',
