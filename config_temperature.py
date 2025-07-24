@@ -79,13 +79,6 @@ train = {
         'T_max': 100000,
         'eta_min': 1e-6
     },
-    '''
-    'scheduler': {
-        'type': 'MultiStepLR',  # This would work
-        'milestones': [50000, 100000],
-        'gamma': 0.5
-    },
-    '''
     # Loss functions - REMOVED gan_opt
     'pixel_opt': {
         'type': 'PhysicsConsistencyLoss',
@@ -128,7 +121,7 @@ val = {
 # Logging - UNCHANGED
 logger = {
     'print_freq': 1000,
-    'save_checkpoint_freq': 400000,
+    'save_checkpoint_freq': 20000,
     'use_tb_logger': False,
     'wandb': {
         'project': 'pure-temperature-sr',  # Changed project name
