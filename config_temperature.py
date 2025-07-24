@@ -102,7 +102,7 @@ train = {
 
 # Validation parameters - UNCHANGED
 val = {
-    'val_freq': 30000,
+    'val_freq': 1000,
     'save_img': True,
     'metrics': {
         'psnr': {
@@ -120,7 +120,7 @@ val = {
 
 # Logging - UNCHANGED
 logger = {
-    'print_freq': 1000,
+    'print_freq': 2000,
     'save_checkpoint_freq': 20000,
     'use_tb_logger': False,
     'wandb': {
