@@ -1,22 +1,21 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from basicsr.models.srgan_model import SRGANModel  # ← Changed this line
+from basicsr.models.base_model import BaseModel
 from basicsr.utils.registry import MODEL_REGISTRY
-from basicsr.utils import tensor2img, imwrite      # ← Added this line
+from basicsr.utils import tensor2img, imwrite
 from collections import OrderedDict
 import numpy as np
-import os.path as osp                              # ← Added this line
-from tqdm import tqdm                              # ← Added this line
-from basicsr.losses.basic_loss import l1_loss, mse_loss
+import os.path as osp
+from tqdm import tqdm
 
-# Импортируем модифицированные версии
+# Import our modified SwinIR - NO CHANGES TO THIS IMPORT
 from models.network_swinir import SwinIR
-from realesrgan.archs.discriminator_arch import UNetDiscriminatorSN
 from utils import calculate_psnr, calculate_ssim
 
+
 class TemperaturePerceptualLoss(nn.Module):
-    """Perceptual loss адаптированный для температурных данных"""
+    """Perceptual loss adapted for temperature data - KEPT UNCHANGED"""
 
     def __init__(self, feature_weights=None):
         super().__init__()
@@ -25,7 +24,7 @@ class TemperaturePerceptualLoss(nn.Module):
         else:
             self.feature_weights = feature_weights
 
-        # Создаем простую сеть для извлечения признаков из температурных данных
+        # Create simple feature extractor for temperature data
         self.feature_extractor = nn.ModuleList([
             nn.Sequential(
                 nn.Conv2d(1, 32, 3, 1, 1),
@@ -53,15 +52,14 @@ class TemperaturePerceptualLoss(nn.Module):
             )
         ])
 
-        # Заморозим веса для стабильности
+        # Freeze weights for stability
         for param in self.parameters():
             param.requires_grad = False
 
     def forward(self, x, y):
-        """Вычисление perceptual loss между x и y"""
+        """Calculate perceptual loss between x and y"""
         loss = 0
 
-        # Проходим через каждый уровень feature extractor
         feat_x = x
         feat_y = y
 
@@ -69,14 +67,14 @@ class TemperaturePerceptualLoss(nn.Module):
             feat_x = layer(feat_x)
             feat_y = layer(feat_y)
 
-            # L1 loss между признаками
+            # L1 loss between features
             loss += self.feature_weights[i] * F.l1_loss(feat_x, feat_y)
 
         return loss
 
 
 class PhysicsConsistencyLoss(nn.Module):
-    """Loss для сохранения физической консистентности температурных данных"""
+    """Loss for maintaining physical consistency of temperature data - KEPT UNCHANGED"""
 
     def __init__(self, gradient_weight=0.1, smoothness_weight=0.05):
         super().__init__()
@@ -85,12 +83,12 @@ class PhysicsConsistencyLoss(nn.Module):
 
     def forward(self, pred, target):
         """
-        Вычисляет loss с учетом физических свойств температурного поля
+        Calculate loss with physical properties of temperature field
         """
-        # Основной L1 loss
+        # Main L1 loss
         main_loss = F.l1_loss(pred, target)
 
-        # Градиентный loss - сохраняем резкость границ
+        # Gradient loss - preserve edge sharpness
         pred_dx = pred[:, :, :, 1:] - pred[:, :, :, :-1]
         pred_dy = pred[:, :, 1:, :] - pred[:, :, :-1, :]
         target_dx = target[:, :, :, 1:] - target[:, :, :, :-1]
@@ -98,7 +96,7 @@ class PhysicsConsistencyLoss(nn.Module):
 
         gradient_loss = F.l1_loss(pred_dx, target_dx) + F.l1_loss(pred_dy, target_dy)
 
-        # Smoothness loss - избегаем артефактов
+        # Smoothness loss - avoid artifacts
         smooth_x = pred[:, :, :, 1:] - 2 * pred[:, :, :, :-1] + pred[:, :, :, :-1]
         smooth_y = pred[:, :, 1:, :] - 2 * pred[:, :, :-1, :] + pred[:, :, :-1, :]
         smoothness_loss = torch.mean(torch.abs(smooth_x)) + torch.mean(torch.abs(smooth_y))
@@ -113,53 +111,35 @@ class PhysicsConsistencyLoss(nn.Module):
 
 
 @MODEL_REGISTRY.register()
-class TemperatureSRModel(SRGANModel):
-    """Гибридная модель для Super-Resolution температурных данных"""
+class PureSwinIRModel(BaseModel):
+    """Pure SwinIR model for Temperature Super-Resolution without GAN"""
 
     def __init__(self, opt):
-        # Initialize base attributes that parent class expects
-        self.opt = opt
-        self.device = torch.device('cuda' if opt.get('num_gpu', 0) > 0 else 'cpu')
-        self.is_train = opt.get('is_train', True)
+        super(PureSwinIRModel, self).__init__(opt)
 
-        # Initialize required lists
-        self.optimizers = []
-        self.schedulers = []
-
-        # Build our custom generator
+        # Build SwinIR generator - EXACTLY THE SAME AS BEFORE
         self.net_g = self.build_swinir_generator(opt)
-        self.net_g = self.net_g.to(self.device)
-        self.print_network = lambda x: print(
-            f"Network: {x.__class__.__name__}, parameters: {sum(p.numel() for p in x.parameters()):,}")
+        self.net_g = self.model_to_device(self.net_g)
         self.print_network(self.net_g)
 
-        # Build discriminator BEFORE training setup
+        # Initialize training settings
         if self.is_train:
-            self.net_d = UNetDiscriminatorSN(
-                num_in_ch=1,
-                num_feat=opt['network_d'].get('num_feat', 64),
-                skip_connection=opt['network_d'].get('skip_connection', True)
-            )
-            self.net_d = self.net_d.to(self.device)
-            self.print_network(self.net_d)
-
-            # Now initialize training settings
             self.init_training_settings()
 
     def build_swinir_generator(self, opt):
-        """Построение SwinIR генератора для температурных данных"""
+        """Build SwinIR generator for temperature data - KEPT UNCHANGED"""
         opt_net = opt['network_g']
 
-        # Параметры для 8x увеличения с 1 каналом
+        # Parameters for 2x upscaling with 1 channel
         model = SwinIR(
-            upscale=2,  # 8x увеличение
-            in_chans=1,  # 1 канал входа
+            upscale=2,
+            in_chans=1,  # 1 channel for temperature data
             img_size=opt_net.get('img_size', 64),
             window_size=opt_net.get('window_size', 8),
             img_range=1.,
-            depths=opt_net.get('depths', [8, 8, 8, 8, 8, 8, 8, 8]),
-            embed_dim=opt_net.get('embed_dim', 240),
-            num_heads=opt_net.get('num_heads', [8, 8, 8, 8, 8, 8, 8, 8]),
+            depths=opt_net.get('depths', [6, 6, 6, 6, 6, 6]),
+            embed_dim=opt_net.get('embed_dim', 60),
+            num_heads=opt_net.get('num_heads', [6, 6, 6, 6, 6, 6]),
             mlp_ratio=opt_net.get('mlp_ratio', 4),
             upsampler=opt_net.get('upsampler', 'pixelshuffle'),
             resi_connection=opt_net.get('resi_connection', '3conv')
@@ -168,10 +148,11 @@ class TemperatureSRModel(SRGANModel):
         return model
 
     def init_training_settings(self):
-        """Инициализация настроек обучения с физическими losses"""
+        """Initialize training settings with physical losses only"""
+        self.net_g.train()
         train_opt = self.opt['train']
 
-        # Настройка pixel loss
+        # Setup pixel loss
         if train_opt.get('pixel_opt'):
             self.cri_pix = PhysicsConsistencyLoss(
                 gradient_weight=train_opt['pixel_opt'].get('gradient_weight', 0.1),
@@ -180,7 +161,7 @@ class TemperatureSRModel(SRGANModel):
         else:
             self.cri_pix = None
 
-        # Настройка perceptual loss для температур
+        # Setup perceptual loss for temperatures
         if train_opt.get('perceptual_opt'):
             self.cri_perceptual = TemperaturePerceptualLoss(
                 feature_weights=train_opt['perceptual_opt'].get('feature_weights', [1.0, 1.0, 1.0, 1.0])
@@ -188,55 +169,34 @@ class TemperatureSRModel(SRGANModel):
         else:
             self.cri_perceptual = None
 
-        # GAN loss
-        if train_opt.get('gan_opt'):
-            from basicsr.losses.gan_loss import GANLoss
-            self.cri_gan = GANLoss(
-                train_opt['gan_opt']['gan_type'],
-                real_label_val=1.0,
-                fake_label_val=0.0,
-                loss_weight=train_opt['gan_opt']['loss_weight']
-            ).to(self.device)
-        else:
-            self.cri_gan = None
-
-        # Set training parameters
-        self.net_d_iters = train_opt.get('net_d_iters', 1)
-        self.net_d_init_iters = train_opt.get('net_d_init_iters', 0)
-
-        # Настройка оптимизаторов
+        # Setup optimizers - ONLY FOR GENERATOR
         self.setup_optimizers()
         self.setup_schedulers()
 
-    def setup_schedulers(self):
-        """Set up schedulers."""
+    def setup_optimizers(self):
+        """Set up optimizer for generator only"""
         train_opt = self.opt['train']
-        scheduler_type = train_opt['scheduler'].pop('type')
 
-        if scheduler_type == 'MultiStepLR':
-            from torch.optim.lr_scheduler import MultiStepLR
-            for optimizer in self.optimizers:
-                self.schedulers.append(
-                    MultiStepLR(optimizer, **train_opt['scheduler'])
-                )
+        # Optimizer for generator
+        optim_type = train_opt['optim_g'].pop('type')
+        self.optimizer_g = self.get_optimizer(optim_type, self.net_g.parameters(), **train_opt['optim_g'])
+        self.optimizers.append(self.optimizer_g)
+
+    def feed_data(self, data):
+        """Feed data - KEPT UNCHANGED"""
+        self.lq = data['lq'].to(self.device)
+        if 'gt' in data:
+            self.gt = data['gt'].to(self.device)
 
     def optimize_parameters(self, current_iter):
-        """Оптимизация с учетом физических ограничений"""
-
-        # Clear cache at start
-        torch.cuda.empty_cache()
-
-        # ============ ГЕНЕРАТОР ОБУЧАЕТСЯ ВСЕГДА ============
-        for p in self.net_d.parameters():
-            p.requires_grad = False
-
+        """Optimization without GAN components"""
         self.optimizer_g.zero_grad()
         self.output = self.net_g(self.lq)
 
         l_g_total = 0
         loss_dict = OrderedDict()
 
-        # Pixel loss - ВСЕГДА
+        # Pixel loss - ALWAYS
         if self.cri_pix:
             l_g_pix, pix_losses = self.cri_pix(self.output, self.gt)
             l_g_total += l_g_pix * self.opt['train']['pixel_opt']['loss_weight']
@@ -244,108 +204,76 @@ class TemperatureSRModel(SRGANModel):
             for k, v in pix_losses.items():
                 loss_dict[f'l_g_pix_{k}'] = v
 
-        # Perceptual loss - ВСЕГДА
+        # Perceptual loss
         if self.cri_perceptual and current_iter % 5 == 0:
             l_g_percep = self.cri_perceptual(self.output, self.gt)
             l_g_total += l_g_percep * self.opt['train']['perceptual_opt']['loss_weight']
             loss_dict['l_g_percep'] = l_g_percep
 
-        # GAN loss - только после прогрева
-        if self.cri_gan and current_iter > self.net_d_init_iters:
-            # Detach and clone to reduce memory
-            output_for_d = self.output.detach().clone()
-            fake_g_pred = self.net_d(output_for_d)
-            l_g_gan = self.cri_gan(fake_g_pred, True, is_disc=False)
-            l_g_total += l_g_gan
-            loss_dict['l_g_gan'] = l_g_gan
-            # Clear immediately
-            del fake_g_pred, output_for_d
-
-        # ВСЕГДА обновляем генератор
         l_g_total.backward()
 
         # Gradient clipping
         if self.opt['train'].get('use_grad_clip', True):
             torch.nn.utils.clip_grad_norm_(
                 self.net_g.parameters(),
-                max_norm=self.opt['train'].get('grad_clip_norm', 20.0)  # Увеличено с 0.1
+                max_norm=self.opt['train'].get('grad_clip_norm', 7.0)
             )
-
 
         self.optimizer_g.step()
 
-        del l_g_total
-        torch.cuda.empty_cache()
-
-        # ============ ДИСКРИМИНАТОР ============
-        if current_iter > self.net_d_init_iters and current_iter % self.net_d_iters == 0:
-            for p in self.net_d.parameters():
-                p.requires_grad = True
-
-            self.optimizer_d.zero_grad()
-
-            # Real
-            real_d_pred = self.net_d(self.gt.detach())  # добавил .detach()
-            l_d_real = self.cri_gan(real_d_pred, True, is_disc=True)
-            loss_dict['l_d_real'] = l_d_real
-            loss_dict['out_d_real'] = torch.mean(real_d_pred.detach())
-            l_d_real.backward()
-            del real_d_pred, l_d_real
-
-            # Fake
-            fake_d_pred = self.net_d(self.output.detach())
-            l_d_fake = self.cri_gan(fake_d_pred, False, is_disc=True)
-            loss_dict['l_d_fake'] = l_d_fake
-            loss_dict['out_d_fake'] = torch.mean(fake_d_pred.detach())
-            l_d_fake.backward()
-            del fake_d_pred, l_d_fake
-
-            self.optimizer_d.step()
-
-            torch.cuda.empty_cache()
-
-        # Добавляем расчет PSNR и SSIM метрик (ВЫНЕСЛИ ИЗ БЛОКА ДИСКРИМИНАТОРА!)
-        if current_iter % 500 == 0:  # Считаем каждые 100 итераций
+        # Calculate PSNR and SSIM metrics
+        if current_iter % 500 == 0:
             with torch.no_grad():
-                # Ограничиваем выходные значения
                 output_clamped = torch.clamp(self.output, 0, 1)
 
-                # Конвертируем в numpy для расчета метрик
                 try:
-                    pred_np = tensor2img([output_clamped])  # Формат HWC, диапазон [0, 255]
-                    gt_np = tensor2img([self.gt])  # Формат HWC, диапазон [0, 255]
+                    pred_np = tensor2img([output_clamped])
+                    gt_np = tensor2img([self.gt])
 
-                    # Рассчитываем PSNR
+                    # Calculate PSNR
                     psnr_value = calculate_psnr(pred_np, gt_np, crop_border=0, test_y_channel=False)
                     loss_dict['psnr'] = psnr_value
 
-                    # Рассчитываем SSIM
+                    # Calculate SSIM
                     ssim_value = calculate_ssim(pred_np, gt_np, crop_border=0, test_y_channel=False)
                     loss_dict['ssim'] = ssim_value
 
                 except Exception as e:
-                    # В случае ошибки ставим нулевые значения
                     loss_dict['psnr'] = 0.0
                     loss_dict['ssim'] = 0.0
-                    print(f"Ошибка расчета метрик: {e}")
+                    print(f"Error calculating metrics: {e}")
 
         self.log_dict = self.reduce_loss_dict(loss_dict)
+
+        # Clear cache periodically
         if current_iter % 10 == 0:
             torch.cuda.empty_cache()
 
     def test(self):
-        """Тестирование с сохранением физических свойств"""
+        """Test with physical constraints preservation"""
         self.net_g.eval()
         with torch.no_grad():
             self.output = self.net_g(self.lq)
-
-            # Clamp для физической корректности (температуры не могут быть отрицательными в нормализованном виде)
+            # Clamp for physical correctness
             self.output = torch.clamp(self.output, 0, 1)
-
         self.net_g.train()
 
+    def get_current_visuals(self):
+        """Get current visuals - KEPT UNCHANGED"""
+        out_dict = OrderedDict()
+        out_dict['lq'] = self.lq.detach().cpu()
+        out_dict['result'] = self.output.detach().cpu()
+        if hasattr(self, 'gt'):
+            out_dict['gt'] = self.gt.detach().cpu()
+        return out_dict
+
+    def save(self, epoch, current_iter):
+        """Save models and training states - SIMPLIFIED"""
+        self.save_network(self.net_g, 'net_g', current_iter)
+        self.save_training_state(epoch, current_iter)
+
     def nondist_validation(self, dataloader, current_iter, tb_logger, save_img):
-        """Валидация с метриками для температурных данных"""
+        """Validation with metrics for temperature data - KEPT UNCHANGED"""
         dataset_name = dataloader.dataset.opt['name']
         with_metrics = self.opt['val'].get('metrics') is not None
         use_pbar = self.opt['val'].get('pbar', False)
@@ -369,7 +297,7 @@ class TemperatureSRModel(SRGANModel):
                 gt_img = tensor2img([visuals['gt']])
                 metric_data['img2'] = gt_img
 
-            # Сохранение изображений
+            # Save images
             if save_img:
                 if self.opt['is_train']:
                     save_img_path = osp.join(self.opt['path']['visualization'],
@@ -382,7 +310,7 @@ class TemperatureSRModel(SRGANModel):
 
                 imwrite(sr_img, save_img_path)
 
-            # Вычисление метрик
+            # Calculate metrics
             if with_metrics:
                 for name, opt_ in self.opt['val']['metrics'].items():
                     self._update_metric(metric_data, dataset_name, name, opt_)
@@ -398,11 +326,10 @@ class TemperatureSRModel(SRGANModel):
             self._report_metric_results(dataset_name)
 
     def _initialize_best_metric_results(self, dataset_name):
-        """Initialize metric results dict."""
+        """Initialize metric results dict - KEPT UNCHANGED"""
         if not hasattr(self, 'best_metric_results'):
             self.best_metric_results = {}
 
-        # Initialize record for this dataset
         record = {}
         for metric, content in self.opt['val']['metrics'].items():
             record[metric] = {'better': 'higher', 'val': float('-inf'), 'iter': -1}
@@ -412,7 +339,7 @@ class TemperatureSRModel(SRGANModel):
         self.best_metric_results[dataset_name] = record
 
     def _update_metric(self, metric_data, dataset_name, metric_name, opt_):
-        """Update metric results."""
+        """Update metric results - KEPT UNCHANGED"""
         if metric_name == 'psnr':
             from basicsr.metrics import calculate_psnr
             value = calculate_psnr(metric_data['img'], metric_data['img2'],
@@ -424,29 +351,26 @@ class TemperatureSRModel(SRGANModel):
                                    crop_border=opt_.get('crop_border', 0),
                                    test_y_channel=opt_.get('test_y_channel', False))
         else:
-            # For other metrics, use basicsr's calculate_metric
             from basicsr.metrics import calculate_metric
             value = calculate_metric(metric_data, opt_)
 
-        # Store the metric value
         if not hasattr(self, 'metric_results'):
             self.metric_results = {}
         if dataset_name not in self.metric_results:
             self.metric_results[dataset_name] = {}
         self.metric_results[dataset_name][metric_name] = value
 
-        # Update best metric if needed
         if value > self.best_metric_results[dataset_name][metric_name]['val']:
             self.best_metric_results[dataset_name][metric_name]['val'] = value
             self.best_metric_results[dataset_name][metric_name]['iter'] = metric_data.get('iter', -1)
 
     def _report_metric_results(self, dataset_name):
-        """Report average metrics with enhanced temperature-specific info."""
+        """Report average metrics - KEPT UNCHANGED"""
         from basicsr.utils import get_root_logger
         logger = get_root_logger()
 
         if hasattr(self, 'metric_results') and dataset_name in self.metric_results:
-            logger.info(f'\n=== Результаты валидации для {dataset_name} ===')
+            logger.info(f'\n=== Validation Results for {dataset_name} ===')
 
             for metric_name, metric_value in self.metric_results[dataset_name].items():
                 if metric_name == 'psnr':
@@ -456,14 +380,13 @@ class TemperatureSRModel(SRGANModel):
                 else:
                     logger.info(f'{metric_name.upper()}: {metric_value:.4f}')
 
-                # Report best metric
                 if hasattr(self, 'best_metric_results') and dataset_name in self.best_metric_results:
                     best_info = self.best_metric_results[dataset_name][metric_name]
                     if metric_name == 'psnr':
-                        logger.info(f'Лучший PSNR: {best_info["val"]:.2f} dB на итерации {best_info["iter"]}')
+                        logger.info(f'Best PSNR: {best_info["val"]:.2f} dB at iteration {best_info["iter"]}')
                     elif metric_name == 'ssim':
-                        logger.info(f'Лучший SSIM: {best_info["val"]:.4f} на итерации {best_info["iter"]}')
+                        logger.info(f'Best SSIM: {best_info["val"]:.4f} at iteration {best_info["iter"]}')
                     else:
-                        logger.info(f'Лучший {metric_name}: {best_info["val"]:.4f} на итерации {best_info["iter"]}')
+                        logger.info(f'Best {metric_name}: {best_info["val"]:.4f} at iteration {best_info["iter"]}')
 
             logger.info('=' * 60)

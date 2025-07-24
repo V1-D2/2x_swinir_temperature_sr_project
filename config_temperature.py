@@ -1,24 +1,24 @@
-# Конфигурация для обучения температурной Super-Resolution модели
+# Configuration for training pure SwinIR Temperature Super-Resolution model
 
-# Общие параметры
-name = 'TemperatureSR_SwinIR_ESRGAN_x2_90k'
-model_type = 'TemperatureSRModel'
+# General parameters
+name = 'PureTemperatureSR_SwinIR_x2'
+model_type = 'PureSwinIRModel'  # Changed from TemperatureSRModel
 scale = 2
-num_gpu = 1  # Количество GPU
+num_gpu = 1  # Number of GPUs
 
-# Параметры данных
+# Data parameters - UNCHANGED
 datasets = {
     'train': {
         'name': 'TemperatureTrainDataset',
-        'dataroot_gt': None,  # Будет задан в train script
-        'npz_files': [],  # Будет задан в train script
+        'dataroot_gt': None,  # Will be set in train script
+        'npz_files': [],  # Will be set in train script
         'preprocessor_args': {
             'target_height': 2000,
             'target_width': 220
         },
         'scale_factor': 2,
         'batch_size': 2,
-        'samples_per_file': 1000,  # Ограничение для управления памятью
+        'samples_per_file': 1000,  # Memory management limit
         'num_worker': 8,
         'pin_memory': True,
         'persistent_workers': True
@@ -26,17 +26,17 @@ datasets = {
     'val': {
         'name': 'TemperatureValDataset',
         'dataroot_gt': None,
-        'npz_file': None,  # Будет задан в train script
+        'npz_file': None,  # Will be set in train script
         'n_samples': 100,
         'scale_factor': 2
     }
 }
 
-# Параметры сети
+# Network parameters - ONLY GENERATOR, DISCRIMINATOR REMOVED
 network_g = {
     'type': 'SwinIR',
     'upscale': 2,
-    'in_chans': 1,  # Температурные данные - 1 канал
+    'in_chans': 1,  # Temperature data - 1 channel
     'img_size': 64,
     'window_size': 8,
     'img_range': 1.,
@@ -48,14 +48,9 @@ network_g = {
     'resi_connection': '3conv'
 }
 
-network_d = {
-    'type': 'UNetDiscriminatorSN',
-    'num_in_ch': 1,  # Температурные данные - 1 канал
-    'num_feat': 64,
-    'skip_connection': True
-}
+# REMOVED network_d configuration
 
-# Путь к файлам
+# Path settings - UNCHANGED
 path = {
     'pretrain_network_g': None,
     'strict_load_g': True,
@@ -68,7 +63,7 @@ path = {
     'visualization': './experiments/visualization'
 }
 
-# Параметры обучения
+# Training parameters - REMOVED GAN-RELATED SETTINGS
 train = {
     'ema_decay': 0.999,
     'optim_g': {
@@ -77,51 +72,34 @@ train = {
         'weight_decay': 1e-4,
         'betas': [0.9, 0.99]
     },
-    'optim_d': {
-        'type': 'Adam',
-        'lr': 5e-5,
-        'weight_decay': 1e-4,
-        'betas': [0.9, 0.99]
-    },
+    # REMOVED optim_d
     'scheduler': {
         'type': 'CosineAnnealingLR',
         'T_max': 100000,
         'eta_min': 1e-6
     },
-    # Loss функции
+    # Loss functions - REMOVED gan_opt
     'pixel_opt': {
         'type': 'PhysicsConsistencyLoss',
         'loss_weight': 100.0,
-        #'loss_weight': 1.0,
         'gradient_weight': 0.08,
         'smoothness_weight': 0.03,
         'reduction': 'mean'
     },
     'perceptual_opt': {
         'type': 'TemperaturePerceptualLoss',
-        #'loss_weight': 0.1,
         'loss_weight': 10.0,
         'feature_weights': [0.1, 0.2, 1.0, 1.0]
     },
-    'gan_opt': {
-        'type': 'gan',
-        'gan_type': 'lsgan',
-        'real_label_val': 1.0,
-        'fake_label_val': 0.0,
-        #'loss_weight': 0.1
-        'loss_weight': 1.0
-    },
-    # Параметры дискриминатора
-    'net_d_iters': 5,
-    'net_d_init_iters': 5000,
-    # Частота сохранения
+    # REMOVED gan_opt
+    # REMOVED net_d_iters and net_d_init_iters
     'manual_seed': 10,
     'use_grad_clip': True,
     'grad_clip_norm': 7.0,
-    'use_ema': True                 # Exponential Moving Averag
+    'use_ema': True  # Exponential Moving Average
 }
 
-# Параметры валидации
+# Validation parameters - UNCHANGED
 val = {
     'val_freq': 30000,
     'save_img': True,
@@ -139,35 +117,35 @@ val = {
     }
 }
 
-# Логирование
+# Logging - UNCHANGED
 logger = {
     'print_freq': 1000,
     'save_checkpoint_freq': 400000,
     'use_tb_logger': False,
     'wandb': {
-        'project': 'temperature-sr',
+        'project': 'pure-temperature-sr',  # Changed project name
         'resume_id': None
     }
 }
 
-# Распределенное обучение
+# Distributed training - UNCHANGED
 dist_params = {
     'backend': 'nccl',
     'port': 29500
 }
 
-# Специфичные для температурных данных параметры
+# Temperature-specific parameters - UNCHANGED
 temperature_specific = {
     'preserve_relative_values': True,
-    'temperature_range': [80, 400],  # Кельвины
+    'temperature_range': [80, 400],  # Kelvin
     'physical_constraints': {
         'enforce_smoothness': True,
         'preserve_gradients': True,
-        'max_gradient': 20.0  # Максимальный градиент температуры
+        'max_gradient': 20.0  # Maximum temperature gradient
     }
 }
 
-# Инкрементальное обучение
+# Incremental training - UNCHANGED
 incremental_training = {
     'enabled': True,
     'epochs_per_file': 1,
@@ -176,7 +154,7 @@ incremental_training = {
     'shuffle_files': True
 }
 
-# Дополнительные параметры
+# Additional parameters - UNCHANGED
 others = {
     'use_amp': False,  # Automatic Mixed Precision
     'num_threads': 8,

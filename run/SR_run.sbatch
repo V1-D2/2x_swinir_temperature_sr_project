@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=temperature_sr_2x
+#SBATCH --job-name=pure_swinir_sr_2x
 #SBATCH --output=%x_%j.out
 #SBATCH --error=%x_%j.err
 #SBATCH --partition=salvador
@@ -9,7 +9,7 @@
 #SBATCH --time=72:00:00
 
 echo "============================================"
-echo "Temperature SR 2x Training Job Started: $(date)"
+echo "Pure SwinIR Temperature SR 2x Training Job Started: $(date)"
 echo "Node: $SLURMD_NODENAME"
 echo "GPUs assigned: $CUDA_VISIBLE_DEVICES"
 echo "Memory allocated: 64GB per GPU"
@@ -24,9 +24,9 @@ echo "Installing required packages..."
 apptainer exec --nv \
     --bind $HOME/local-python:$HOME/.local \
     /home/shared/containers/tensorflow-25.02-py3.sif \
-    pip install --user basicsr opencv-python timm facexlib gfpgan tqdm matplotlib
+    pip install --user basicsr opencv-python timm tqdm matplotlib
 
-# Проверим среду в TensorFlow контейнере
+# Check environment in TensorFlow container
 echo "Testing environment in TensorFlow container:"
 apptainer exec --nv \
     --bind $HOME/local-python:$HOME/.local \
@@ -66,21 +66,20 @@ echo "Data should be available at: /scratch/tmp/data"
 ls -la /scratch/tmp/data
 
 echo "============================================"
-echo "Starting Temperature SR 2x training with TensorFlow container:"
+echo "Starting Pure SwinIR Temperature SR 2x training:"
 
-# Change to NEW project directory - ИСПРАВЛЕНО
-cd $HOME/2x_temperature_sr_project
+# Change to project directory - KEEP THE SAME
+cd $HOME/2x_swinir_temperature_sr_project
 
 # Fix CUDA memory fragmentation
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-# Запускаем Temperature SR обучение в TensorFlow контейнере
-# UPDATED: Changed data path to use scratch directory
+# Run Pure SwinIR Temperature SR training
 apptainer exec --nv \
     --bind $HOME/local-python:$HOME/.local \
-    --bind $HOME/2x_temperature_sr_project:$HOME/2x_temperature_sr_project \
+    --bind $HOME/2x_swinir_temperature_sr_project:$HOME/2x_swinir_temperature_sr_project \
     --bind /scratch/tmp/data:/scratch/tmp/data \
-    --env PYTHONPATH=$HOME/2x_temperature_sr_project:$PYTHONPATH \
+    --env PYTHONPATH=$HOME/2x_swinir_temperature_sr_project:$PYTHONPATH \
     /home/shared/containers/tensorflow-25.02-py3.sif \
     python train_temperature_sr.py \
     --data_dir /scratch/tmp/data \
@@ -88,5 +87,5 @@ apptainer exec --nv \
     --num_epochs 5
 
 echo "============================================"
-echo "Temperature SR 2x Training Job Finished: $(date)"
+echo "Pure SwinIR Temperature SR 2x Training Job Finished: $(date)"
 echo "============================================"

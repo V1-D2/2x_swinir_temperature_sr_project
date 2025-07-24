@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Скрипт для тестирования обученной температурной Super-Resolution модели
+Script for testing trained pure SwinIR temperature Super-Resolution model
 """
 
 import argparse
@@ -13,13 +13,13 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 
 from data_preprocessing import TemperatureDataPreprocessor
-from basicsr.utils import tensor2img, imwrite  # ← Changed this line
-from hybrid_model import TemperatureSRModel     # ← Changed this line
+from basicsr.utils import tensor2img, imwrite
+from swinir_model import PureSwinIRModel  # Changed from hybrid_model
 from config_temperature import *
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Test Temperature Super-Resolution Model')
+    parser = argparse.ArgumentParser(description='Test Pure SwinIR Temperature Super-Resolution Model')
     parser.add_argument('--model_path', type=str, required=True,
                         help='Path to trained model')
     parser.add_argument('--input_npz', type=str, required=True,
@@ -36,30 +36,28 @@ def parse_args():
 
 
 def test_model(model, test_data, save_path=None):
-    """Тестирование модели на одном образце"""
+    """Test model on one sample - UNCHANGED"""
     model.net_g.eval()
 
     with torch.no_grad():
-        # Подготовка данных
+        # Prepare data
         lr_tensor = test_data['lq'].unsqueeze(0).cuda()
         hr_tensor = test_data['gt'].unsqueeze(0).cuda()
 
-        # Прогон через модель
+        # Run through model
         sr_tensor = model.net_g(lr_tensor)
         sr_tensor = torch.clamp(sr_tensor, 0, 1)
 
-    # Конвертация в numpy
+    # Convert to numpy
     lr_img = tensor2img([lr_tensor])
     hr_img = tensor2img([hr_tensor])
     sr_img = tensor2img([sr_tensor])
 
-
-
-    # Восстановление оригинальных значений температуры
+    # Restore original temperature values
     if 'metadata' in test_data:
         meta = test_data['metadata']
         if 'original_min' in meta and 'original_max' in meta:
-            # Денормализация
+            # Denormalize
             hr_img = hr_img * (meta['original_max'] - meta['original_min']) + meta['original_min']
             sr_img = sr_img * (meta['original_max'] - meta['original_min']) + meta['original_min']
             lr_img = lr_img * (meta['original_max'] - meta['original_min']) + meta['original_min']
@@ -71,7 +69,7 @@ def test_model(model, test_data, save_path=None):
         'metadata': test_data.get('metadata', {})
     }
 
-    # Вычисление метрик
+    # Calculate metrics
     mse = np.mean((sr_img - hr_img) ** 2)
     psnr = 20 * np.log10(np.max(hr_img) / np.sqrt(mse)) if mse > 0 else float('inf')
 
@@ -86,35 +84,35 @@ def test_model(model, test_data, save_path=None):
 
 
 def save_comparison_plot(results, save_path, idx):
-    """Сохранение сравнительного изображения"""
+    """Save comparison image - UNCHANGED"""
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
 
-    # Низкое разрешение
+    # Low resolution
     im1 = axes[0, 0].imshow(results['lr'], cmap='viridis', aspect='auto')
     axes[0, 0].set_title(f'Low Resolution ({results["lr"].shape[0]}×{results["lr"].shape[1]})')
     axes[0, 0].axis('off')
     plt.colorbar(im1, ax=axes[0, 0], fraction=0.046)
 
-    # Высокое разрешение (Ground Truth)
+    # High resolution (Ground Truth)
     im2 = axes[0, 1].imshow(results['hr'], cmap='viridis', aspect='auto')
     axes[0, 1].set_title(f'High Resolution GT ({results["hr"].shape[0]}×{results["hr"].shape[1]})')
     axes[0, 1].axis('off')
     plt.colorbar(im2, ax=axes[0, 1], fraction=0.046)
 
-    # Super Resolution результат
+    # Super Resolution result
     im3 = axes[0, 2].imshow(results['sr'], cmap='viridis', aspect='auto')
     axes[0, 2].set_title(f'Super Resolution ({results["sr"].shape[0]}×{results["sr"].shape[1]})')
     axes[0, 2].axis('off')
     plt.colorbar(im3, ax=axes[0, 2], fraction=0.046)
 
-    # Разница между HR и SR
+    # Difference between HR and SR
     diff = np.abs(results['hr'] - results['sr'])
     im4 = axes[1, 0].imshow(diff, cmap='hot', aspect='auto')
     axes[1, 0].set_title('Absolute Difference (HR - SR)')
     axes[1, 0].axis('off')
     plt.colorbar(im4, ax=axes[1, 0], fraction=0.046)
 
-    # Увеличенная область для детального сравнения
+    # Zoomed area for detailed comparison
     h, w = results['hr'].shape
     crop_size = min(h // 4, w // 4)
     start_h, start_w = h // 2 - crop_size // 2, w // 2 - crop_size // 2
@@ -132,7 +130,7 @@ def save_comparison_plot(results, save_path, idx):
     axes[1, 2].axis('off')
     plt.colorbar(im6, ax=axes[1, 2], fraction=0.046)
 
-    # Добавляем метрики
+    # Add metrics
     metrics_text = f"PSNR: {results['metrics']['psnr']:.2f} dB\n"
     metrics_text += f"MSE: {results['metrics']['mse']:.4f}\n"
     metrics_text += f"Mean Temp Error: {results['metrics']['temperature_error_mean']:.2f} K\n"
@@ -149,26 +147,26 @@ def save_comparison_plot(results, save_path, idx):
 def main():
     args = parse_args()
 
-    # Создаем выходную директорию
+    # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Создаем конфигурацию для модели
+    # Create configuration for model
     opt = {
         'name': name,
         'model_type': model_type,
         'scale': scale,
         'num_gpu': 1,
         'network_g': network_g,
-        'network_d': network_d,
+        # 'network_d': network_d,  # REMOVED
         'path': path,
         'train': train,
         'is_train': False,
         'dist': False
     }
 
-    # Загружаем модель
-    print(f"Loading model from {args.model_path}")
-    model = TemperatureSRModel(opt)
+    # Load model
+    print(f"Loading pure SwinIR model from {args.model_path}")
+    model = PureSwinIRModel(opt)
 
     # Load the checkpoint directly
     checkpoint = torch.load(args.model_path, map_location='cuda')
@@ -188,45 +186,41 @@ def main():
         # It's just the state dict
         model.net_g.load_state_dict(checkpoint, strict=True)
 
-    print("Model loaded successfully!")
+    print("Pure SwinIR model loaded successfully!")
 
     model.net_g.eval()
 
-    # Создаем препроцессор
+    # Create preprocessor
     preprocessor = TemperatureDataPreprocessor()
 
-    # Загружаем статистику препроцессора если есть
+    # Load preprocessor statistics if available
     if args.stats_path and os.path.exists(args.stats_path):
         stats = np.load(args.stats_path)
         preprocessor.stats = dict(stats)
         print(f"Loaded preprocessor statistics from {args.stats_path}")
 
-    # Загружаем тестовые данные
-    print(f"Loading test data from {args.input_npz}")
-    #data = np.load(args.input_npz, allow_pickle=True)
-    #swaths = data['swath_array']
-
+    # Load test data
     print(f"Loading test data from {args.input_npz}")
     data = np.load(args.input_npz, allow_pickle=True)
 
-    # Проверяем какие ключи есть в файле
+    # Check available keys in file
     print(f"Available keys in NPZ: {list(data.keys())}")
 
-    # Создаем структуру данных как в обучающем датасете
+    # Create data structure as in training dataset
     temperature = data['temperature'].astype(np.float32)
     metadata = data['metadata'].item() if hasattr(data['metadata'], 'item') else data['metadata']
 
-    # Создаем список из одного элемента для совместимости
+    # Create list of one element for compatibility
     swaths = [{
         'temperature': temperature,
         'metadata': metadata
     }]
 
-    # Ограничиваем количество тестовых образцов
+    # Limit number of test samples
     num_samples = min(args.num_samples, len(swaths))
     print(f"Testing on {num_samples} samples")
 
-    # Тестирование
+    # Testing
     all_metrics = []
 
     for i in tqdm(range(num_samples), desc="Testing"):
@@ -234,15 +228,15 @@ def main():
         temp = swath['temperature']
         meta = swath['metadata']
 
-        # Предобработка
+        # Preprocessing
         temp = preprocessor.crop_or_pad(temp)
         temp_min, temp_max = np.min(temp), np.max(temp)
         temp_norm = preprocessor.normalize_temperature(temp)
 
-        # Создаем пару LR-HR
+        # Create LR-HR pair
         lr, hr = preprocessor.create_lr_hr_pair(temp_norm, scale_factor=2)
 
-        # Подготовка данных для модели
+        # Prepare data for model
         test_data = {
             'lq': torch.from_numpy(lr).unsqueeze(0).float(),
             'gt': torch.from_numpy(hr).unsqueeze(0).float(),
@@ -253,15 +247,15 @@ def main():
             }
         }
 
-        # Тестирование
+        # Testing
         results = test_model(model, test_data)
         all_metrics.append(results['metrics'])
 
-        # Сохранение результатов
+        # Save results
         if args.save_comparison:
             save_comparison_plot(results, args.output_dir, i)
 
-        # Сохранение numpy массивов
+        # Save numpy arrays
         np_save_path = os.path.join(args.output_dir, f'result_{i:04d}.npz')
         np.savez(np_save_path,
                  lr=results['lr'],
@@ -270,7 +264,7 @@ def main():
                  metrics=results['metrics'],
                  metadata=results['metadata'])
 
-    # Вычисление средних метрик
+    # Calculate average metrics
     avg_metrics = {}
     for key in all_metrics[0].keys():
         avg_metrics[key] = np.mean([m[key] for m in all_metrics])
@@ -281,10 +275,10 @@ def main():
     print(f"Mean Temperature Error: {avg_metrics['temperature_error_mean']:.2f} K")
     print(f"Max Temperature Error: {avg_metrics['temperature_error_max']:.2f} K")
 
-    # Сохранение метрик
+    # Save metrics
     metrics_path = os.path.join(args.output_dir, 'test_metrics.txt')
     with open(metrics_path, 'w') as f:
-        f.write("=== Test Results ===\n")
+        f.write("=== Pure SwinIR Test Results ===\n")
         f.write(f"Model: {args.model_path}\n")
         f.write(f"Test data: {args.input_npz}\n")
         f.write(f"Number of samples: {num_samples}\n\n")
