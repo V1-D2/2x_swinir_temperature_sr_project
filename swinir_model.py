@@ -152,6 +152,10 @@ class PureSwinIRModel(BaseModel):
         self.net_g.train()
         train_opt = self.opt['train']
 
+        print(f"DEBUG: train_opt keys: {list(train_opt.keys())}")
+        print(f"DEBUG: pixel_opt exists: {'pixel_opt' in train_opt}")
+        print(f"DEBUG: pixel_opt value: {train_opt.get('pixel_opt')}")
+
         # Setup pixel loss
         if train_opt.get('pixel_opt'):
             self.cri_pix = PhysicsConsistencyLoss(
@@ -234,6 +238,12 @@ class PureSwinIRModel(BaseModel):
             l_g_percep = self.cri_perceptual(self.output, self.gt)
             l_g_total += l_g_percep * self.opt['train']['perceptual_opt']['loss_weight']
             loss_dict['l_g_percep'] = l_g_percep
+
+        # Ensure we have at least one loss
+        if isinstance(l_g_total, int) and l_g_total == 0:
+            # Fallback to simple L1 loss if no other losses are computed
+            l_g_total = torch.nn.functional.l1_loss(self.output, self.gt)
+            loss_dict['l_g_fallback'] = l_g_total
 
         l_g_total.backward()
 
