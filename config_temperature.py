@@ -1,7 +1,7 @@
 # Configuration for training pure SwinIR Temperature Super-Resolution model
 
 # General parameters
-name = 'PureTemperatureSR_SwinIR_x2'
+name = 'PureTemperatureSR_SwinIR_x2_2nd_generation'
 model_type = 'PureSwinIRModel'  # Changed from TemperatureSRModel
 scale = 2
 num_gpu = 1  # Number of GPUs
