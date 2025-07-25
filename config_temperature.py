@@ -40,9 +40,11 @@ network_g = {
     'img_size': 64,
     'window_size': 8,
     'img_range': 1.,
-    'depths': [6, 6, 6, 6, 6, 6],
+    'depths': [6, 6, 6, 6],
+    # 'depths': [6, 6, 6, 6, 6, 6],
     'embed_dim': 60,
-    'num_heads': [6, 6, 6, 6, 6, 6],
+    'num_heads': [6, 6, 6, 6],
+    # 'num_heads': [6, 6, 6, 6, 6, 6],
     'mlp_ratio': 4,
     'upsampler': 'pixelshuffle',
     'resi_connection': '3conv'
