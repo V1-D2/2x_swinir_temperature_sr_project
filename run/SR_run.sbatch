@@ -82,7 +82,7 @@ apptainer exec --nv \
     --env PYTHONPATH=$HOME/2x_swinir_temperature_sr_project:$PYTHONPATH \
     /home/shared/containers/tensorflow-25.02-py3.sif \
     python train_temperature_sr.py \
-    --data_dir /scratch/tmp/data \
+    --data_dir /scratch/tmp/data/new_data_all \
     --output_dir ./experiments \
     --num_epochs 5
 
