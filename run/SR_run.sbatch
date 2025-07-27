@@ -78,7 +78,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 apptainer exec --nv \
     --bind $HOME/local-python:$HOME/.local \
     --bind $HOME/2x_swinir_temperature_sr_project:$HOME/2x_swinir_temperature_sr_project \
-    --bind /scratch/tmp/data:/scratch/tmp/data/new_data_all \
+    --bind /scratch/tmp/data/new_data_all:/scratch/tmp/data/new_data_all \
     --env PYTHONPATH=$HOME/2x_swinir_temperature_sr_project:$PYTHONPATH \
     /home/shared/containers/tensorflow-25.02-py3.sif \
     python train_temperature_sr.py \
