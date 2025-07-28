@@ -94,7 +94,7 @@ echo "============================================"
 apptainer exec --nv \
     --bind $HOME/local-python:$HOME/.local \
     --bind $PROJECT_DIR:$PROJECT_DIR \
-    --bind /scratch/tmp/data/new_data_all:/scratch/tmp/data/new_data_all:ro \
+    --bind /home/vdidur/temperature_sr_project/data:/home/vdidur/temperature_sr_project/data:ro \
     --env PYTHONPATH=$PROJECT_DIR:$PYTHONPATH \
     --workdir $PROJECT_DIR \
     /home/shared/containers/tensorflow-25.02-py3.sif \

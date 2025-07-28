@@ -357,8 +357,8 @@ def main():
     """Main function"""
 
     # Configuration - UPDATE THESE PATHS
-    NPZ_DIR = "/scratch/tmp/data/new_data_all"  # Update based on your sbatch file
-    MODEL_PATH = "./experiments/PureTemperatureSR_SwinIR_x2_2nd_generation/models/net_g_latest.pth"  # Update with actual checkpoint
+    NPZ_DIR = "/home/vdidur/temperature_sr_project/data"  # Update based on your sbatch file
+    MODEL_PATH = "./experiments/PureTemperatureSR_SwinIR_x2_2nd_generation/models/net_g_20000.pth"  # Update with actual checkpoint
     NUM_SAMPLES = 500
     SAVE_DIR = "./test_swinir_results"
 
