@@ -153,10 +153,6 @@ if [ $? -eq 0 ]; then
     ls -la ./cascaded_swinir_results/results_8x/ | head -5
 
     echo ""
-    echo "Comparison visualizations:"
-    ls -la ./cascaded_swinir_results/*.png
-
-    echo ""
     echo "Statistics report:"
     if [ -f "./cascaded_swinir_results/statistics_report.txt" ]; then
         cat ./cascaded_swinir_results/statistics_report.txt

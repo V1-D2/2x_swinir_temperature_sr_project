@@ -399,21 +399,21 @@ def cascaded_pure_swinir_temperature_sr(npz_dir: str, model_path: str, num_sampl
 
     # Add these debug prints right after loading the NPZ file:
     with np.load(last_file, allow_pickle=True) as data:
-        print(f"DEBUG: Keys in NPZ file: {list(data.keys())}")  # ADD THIS
+        logger.info(f"Keys in NPZ file: {list(data.keys())}")
 
         # Check data format
         if 'swath_array' in data:
             swath_array = data['swath_array']
-            print(f"DEBUG: Using swath_array, shape: {swath_array.shape}")  # ADD THIS
+            logger.info(f"Using swath_array, shape: {swath_array.shape}")
         elif 'swaths' in data:
             swath_array = data['swaths']
-            print(f"DEBUG: Using swaths, shape: {swath_array.shape}")  # ADD THIS
+            logger.info(f"Using swaths, shape: {swath_array.shape}")
         else:
             # Single temperature array
             temperature = data['temperature'].astype(np.float32)
             metadata = data['metadata'].item() if hasattr(data['metadata'], 'item') else data['metadata']
             swath_array = [{'temperature': temperature, 'metadata': metadata}]
-            print(f"DEBUG: Using single temperature array")  # ADD THIS
+            logger.info(f"Using single temperature array")
 
         total_swaths = len(swath_array)
         print(f"DEBUG: Total swaths: {total_swaths}")  # ADD THIS
