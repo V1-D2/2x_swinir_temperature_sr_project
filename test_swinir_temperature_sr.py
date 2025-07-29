@@ -362,8 +362,6 @@ def main():
     NUM_SAMPLES = 500
     SAVE_DIR = "./test_swinir_results"
 
-
-
     logger.info("Pure SwinIR Temperature SR Model Testing")
     logger.info(f"Save files: {SAVE_FILES}")
 
