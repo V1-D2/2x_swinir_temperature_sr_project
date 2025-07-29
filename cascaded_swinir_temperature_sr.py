@@ -397,38 +397,29 @@ def cascaded_pure_swinir_temperature_sr(npz_dir: str, model_path: str, num_sampl
     results = []
     processed_count = 0
 
-    # Add these debug prints right after loading the NPZ file:
     with np.load(last_file, allow_pickle=True) as data:
-        logger.info(f"Keys in NPZ file: {list(data.keys())}")
-
         # Check data format
         if 'swath_array' in data:
             swath_array = data['swath_array']
-            logger.info(f"Using swath_array, shape: {swath_array.shape}")
         elif 'swaths' in data:
             swath_array = data['swaths']
-            logger.info(f"Using swaths, shape: {swath_array.shape}")
         else:
             # Single temperature array
             temperature = data['temperature'].astype(np.float32)
             metadata = data['metadata'].item() if hasattr(data['metadata'], 'item') else data['metadata']
             swath_array = [{'temperature': temperature, 'metadata': metadata}]
-            logger.info(f"Using single temperature array")
 
         total_swaths = len(swath_array)
-        print(f"DEBUG: Total swaths: {total_swaths}")  # ADD THIS
         logger.info(f"Total swaths in file: {total_swaths}")
 
         # Process from the end of file (same as the other project)
         for idx in range(total_swaths - 1, max(0, total_swaths - 100), -1):
-            print(f"DEBUG: Trying swath index {idx}")  # ADD THIS
             if processed_count >= num_samples:
                 break
 
             try:
                 swath = swath_array[idx].item() if hasattr(swath_array[idx], 'item') else swath_array[idx]
-                print(f"DEBUG: Swath type: {type(swath)}")  # ADD THIS
-                print(f"DEBUG: Swath keys: {swath.keys() if isinstance(swath, dict) else 'Not a dict'}")  # ADD THIS
+
                 if 'temperature' not in swath:
                     continue
 
@@ -689,230 +680,234 @@ def create_variant_comparison(results: List[Dict], save_dir: str, variant: str):
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
 
-    def create_progression_visualization(results: List[Dict], save_dir: str):
-        """Create visualization showing progression from original to 8x"""
 
-        if len(results) == 0:
-            return
+def create_progression_visualization(results: List[Dict], save_dir: str):
+    """Create visualization showing progression from original to 8x"""
 
-        # Use first sample for detailed progression
-        result = results[0]
+    if len(results) == 0:
+        return
 
-        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    # Use first sample for detailed progression
+    result = results[0]
 
-        # Row 1: Temperature maps
-        images = [
-            (result['original'], 'Original', result['original'].shape),
-            (result['sr_4x'], '4x SR (2x→2x)', result['sr_4x'].shape),
-            (result['sr_8x'], '8x SR (2x→2x→2x)', result['sr_8x'].shape)
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+
+    # Row 1: Temperature maps
+    images = [
+        (result['original'], 'Original', result['original'].shape),
+        (result['sr_4x'], '4x SR (2x→2x)', result['sr_4x'].shape),
+        (result['sr_8x'], '8x SR (2x→2x→2x)', result['sr_8x'].shape)
+    ]
+
+    for i, (img, title, shape) in enumerate(images):
+        # Индивидуальная нормализация каждого изображения
+        # Используем percentile normalization для каждого изображения
+        p_low, p_high = 1, 99
+        img_min, img_max = np.percentile(img, [p_low, p_high])
+        img_clipped = np.clip(img, img_min, img_max)
+        img_norm = (img_clipped - img_min) / (img_max - img_min)
+        im = axes[0, i].imshow(img_norm, cmap='turbo', aspect='auto')
+        axes[0, i].set_title(f'{title}\n{shape}')
+        axes[0, i].axis('off')
+        plt.colorbar(im, ax=axes[0, i], fraction=0.046)
+
+    # Row 2: Zoomed regions for detail comparison
+    if result['sr_8x'].shape[0] >= 512:
+        h, w = result['sr_8x'].shape
+        center_y, center_x = h // 2, w // 2
+        size = 256
+
+        y1 = max(0, center_y - size)
+        y2 = min(h, center_y + size)
+        x1 = max(0, center_x - size)
+        x2 = min(w, center_x + size)
+
+        # Original zoomed (scaled to match 8x)
+        orig_h, orig_w = result['original'].shape
+        orig_y1, orig_y2 = y1 // 8, y2 // 8
+        orig_x1, orig_x2 = x1 // 8, x2 // 8
+        orig_zoom = cv2.resize(result['original'][orig_y1:orig_y2, orig_x1:orig_x2],
+                               (x2 - x1, y2 - y1), interpolation=cv2.INTER_CUBIC)
+
+        # 4x zoomed (scaled to match 8x)
+        sr4x_y1, sr4x_y2 = y1 // 2, y2 // 2
+        sr4x_x1, sr4x_x2 = x1 // 2, x2 // 2
+        sr4x_zoom = cv2.resize(result['sr_4x'][sr4x_y1:sr4x_y2, sr4x_x1:sr4x_x2],
+                               (x2 - x1, y2 - y1), interpolation=cv2.INTER_CUBIC)
+
+        zoomed_images = [
+            (orig_zoom, 'Original (8x upscaled)'),
+            (sr4x_zoom, '4x SR (2x upscaled)'),
+            (result['sr_8x'][y1:y2, x1:x2], '8x SR')
         ]
 
-        for i, (img, title, shape) in enumerate(images):
-            # Индивидуальная нормализация каждого изображения
+        for i, (img, title) in enumerate(zoomed_images):
             # Используем percentile normalization для каждого изображения
             p_low, p_high = 1, 99
             img_min, img_max = np.percentile(img, [p_low, p_high])
             img_clipped = np.clip(img, img_min, img_max)
             img_norm = (img_clipped - img_min) / (img_max - img_min)
-            im = axes[0, i].imshow(img_norm, cmap='turbo', aspect='auto')
-            axes[0, i].set_title(f'{title}\n{shape}')
-            axes[0, i].axis('off')
-            plt.colorbar(im, ax=axes[0, i], fraction=0.046)
+            im = axes[1, i].imshow(img_norm, cmap='turbo', aspect='auto')
+            axes[1, i].set_title(f'{title} - Zoomed')
+            axes[1, i].axis('off')
+    else:
+        for i in range(3):
+            axes[1, i].axis('off')
 
-        # Row 2: Zoomed regions for detail comparison
-        if result['sr_8x'].shape[0] >= 512:
-            h, w = result['sr_8x'].shape
-            center_y, center_x = h // 2, w // 2
-            size = 256
+    # Add temperature statistics
+    stats_text = "Temperature Statistics (K):\n\n"
+    stats_text += f"Original: [{np.min(result['original']):.1f}, {np.max(result['original']):.1f}], "
+    stats_text += f"Avg: {np.mean(result['original']):.1f}\n"
+    stats_text += f"4x SR: [{np.min(result['sr_4x']):.1f}, {np.max(result['sr_4x']):.1f}], "
+    stats_text += f"Avg: {np.mean(result['sr_4x']):.1f}\n"
+    stats_text += f"8x SR: [{np.min(result['sr_8x']):.1f}, {np.max(result['sr_8x']):.1f}], "
+    stats_text += f"Avg: {np.mean(result['sr_8x']):.1f}"
 
-            y1 = max(0, center_y - size)
-            y2 = min(h, center_y + size)
-            x1 = max(0, center_x - size)
-            x2 = min(w, center_x + size)
+    fig.text(0.02, 0.02, stats_text, fontsize=11,
+             bbox=dict(boxstyle="round,pad=0.5", facecolor="white", alpha=0.9))
 
-            # Original zoomed (scaled to match 8x)
-            orig_h, orig_w = result['original'].shape
-            orig_y1, orig_y2 = y1 // 8, y2 // 8
-            orig_x1, orig_x2 = x1 // 8, x2 // 8
-            orig_zoom = cv2.resize(result['original'][orig_y1:orig_y2, orig_x1:orig_x2],
-                                   (x2 - x1, y2 - y1), interpolation=cv2.INTER_CUBIC)
+    plt.suptitle('Temperature Super-Resolution Progression', fontsize=16)
+    plt.tight_layout()
 
-            # 4x zoomed (scaled to match 8x)
-            sr4x_y1, sr4x_y2 = y1 // 2, y2 // 2
-            sr4x_x1, sr4x_x2 = x1 // 2, x2 // 2
-            sr4x_zoom = cv2.resize(result['sr_4x'][sr4x_y1:sr4x_y2, sr4x_x1:sr4x_x2],
-                                   (x2 - x1, y2 - y1), interpolation=cv2.INTER_CUBIC)
+    save_path = os.path.join(save_dir, 'progression_visualization.png')
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
 
-            zoomed_images = [
-                (orig_zoom, 'Original (8x upscaled)'),
-                (sr4x_zoom, '4x SR (2x upscaled)'),
-                (result['sr_8x'][y1:y2, x1:x2], '8x SR')
-            ]
 
-            for i, (img, title) in enumerate(zoomed_images):
-                # Используем percentile normalization для каждого изображения
-                p_low, p_high = 1, 99
-                img_min, img_max = np.percentile(img, [p_low, p_high])
-                img_clipped = np.clip(img, img_min, img_max)
-                img_norm = (img_clipped - img_min) / (img_max - img_min)
-                im = axes[1, i].imshow(img_norm, cmap='turbo', aspect='auto')
-                axes[1, i].set_title(f'{title} - Zoomed')
-                axes[1, i].axis('off')
-        else:
-            for i in range(3):
-                axes[1, i].axis('off')
+def generate_statistics_report(results: List[Dict], save_dir: str):
+    """Generate comprehensive statistics report"""
 
-        # Add temperature statistics
-        stats_text = "Temperature Statistics (K):\n\n"
-        stats_text += f"Original: [{np.min(result['original']):.1f}, {np.max(result['original']):.1f}], "
-        stats_text += f"Avg: {np.mean(result['original']):.1f}\n"
-        stats_text += f"4x SR: [{np.min(result['sr_4x']):.1f}, {np.max(result['sr_4x']):.1f}], "
-        stats_text += f"Avg: {np.mean(result['sr_4x']):.1f}\n"
-        stats_text += f"8x SR: [{np.min(result['sr_8x']):.1f}, {np.max(result['sr_8x']):.1f}], "
-        stats_text += f"Avg: {np.mean(result['sr_8x']):.1f}"
+    report_path = os.path.join(save_dir, 'statistics_report.txt')
 
-        fig.text(0.02, 0.02, stats_text, fontsize=11,
-                 bbox=dict(boxstyle="round,pad=0.5", facecolor="white", alpha=0.9))
+    with open(report_path, 'w') as f:
+        f.write("=" * 80 + "\n")
+        f.write("CASCADED PURE SWINIR TEMPERATURE SUPER-RESOLUTION STATISTICS REPORT\n")
+        f.write("=" * 80 + "\n\n")
 
-        plt.suptitle('Temperature Super-Resolution Progression', fontsize=16)
-        plt.tight_layout()
+        f.write(f"Total samples processed: {len(results)}\n")
+        f.write(f"Model: Pure SwinIR-based Temperature SR\n")
+        f.write(f"Processing variants: 4x (2x→2x) and 8x (2x→2x→2x)\n\n")
 
-        save_path = os.path.join(save_dir, 'progression_visualization.png')
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-        plt.close()
+        # Individual sample statistics
+        f.write("INDIVIDUAL SAMPLE STATISTICS\n")
+        f.write("-" * 80 + "\n")
 
-    def generate_statistics_report(results: List[Dict], save_dir: str):
-        """Generate comprehensive statistics report"""
+        for i, result in enumerate(results):
+            f.write(f"\nSample {i + 1}:\n")
+            f.write(f"  Original shape: {result['metadata']['original_shape']}\n")
+            f.write(f"  Original temperature: Min={np.min(result['original']):.2f}K, "
+                    f"Max={np.max(result['original']):.2f}K, "
+                    f"Avg={np.mean(result['original']):.2f}K\n")
 
-        report_path = os.path.join(save_dir, 'statistics_report.txt')
+            # 4x stats
+            f.write(f"\n  4x Super-Resolution:\n")
+            f.write(f"    Final shape: {result['metadata']['sr_4x_shape']}\n")
+            f.write(f"    Temperature: Min={np.min(result['sr_4x']):.2f}K, "
+                    f"Max={np.max(result['sr_4x']):.2f}K, "
+                    f"Avg={np.mean(result['sr_4x']):.2f}K\n")
+            f.write(f"    Processing time: {result['stats_4x']['total_time']:.2f}s\n")
 
-        with open(report_path, 'w') as f:
-            f.write("=" * 80 + "\n")
-            f.write("CASCADED PURE SWINIR TEMPERATURE SUPER-RESOLUTION STATISTICS REPORT\n")
-            f.write("=" * 80 + "\n\n")
+            # 8x stats
+            f.write(f"\n  8x Super-Resolution:\n")
+            f.write(f"    Final shape: {result['metadata']['sr_8x_shape']}\n")
+            f.write(f"    Temperature: Min={np.min(result['sr_8x']):.2f}K, "
+                    f"Max={np.max(result['sr_8x']):.2f}K, "
+                    f"Avg={np.mean(result['sr_8x']):.2f}K\n")
+            f.write(f"    Processing time: {result['stats_8x']['total_time']:.2f}s\n")
 
-            f.write(f"Total samples processed: {len(results)}\n")
-            f.write(f"Model: Pure SwinIR-based Temperature SR\n")
-            f.write(f"Processing variants: 4x (2x→2x) and 8x (2x→2x→2x)\n\n")
+        # Summary statistics
+        f.write("\n" + "=" * 80 + "\n")
+        f.write("SUMMARY STATISTICS\n")
+        f.write("-" * 80 + "\n")
 
-            # Individual sample statistics
-            f.write("INDIVIDUAL SAMPLE STATISTICS\n")
-            f.write("-" * 80 + "\n")
+        # Average processing times
+        avg_4x_time = np.mean([r['stats_4x']['total_time'] for r in results])
+        avg_8x_time = np.mean([r['stats_8x']['total_time'] for r in results])
 
-            for i, result in enumerate(results):
-                f.write(f"\nSample {i + 1}:\n")
-                f.write(f"  Original shape: {result['metadata']['original_shape']}\n")
-                f.write(f"  Original temperature: Min={np.min(result['original']):.2f}K, "
-                        f"Max={np.max(result['original']):.2f}K, "
-                        f"Avg={np.mean(result['original']):.2f}K\n")
+        f.write(f"\nAverage processing times:\n")
+        f.write(f"  4x SR: {avg_4x_time:.2f}s\n")
+        f.write(f"  8x SR: {avg_8x_time:.2f}s\n")
 
-                # 4x stats
-                f.write(f"\n  4x Super-Resolution:\n")
-                f.write(f"    Final shape: {result['metadata']['sr_4x_shape']}\n")
-                f.write(f"    Temperature: Min={np.min(result['sr_4x']):.2f}K, "
-                        f"Max={np.max(result['sr_4x']):.2f}K, "
-                        f"Avg={np.mean(result['sr_4x']):.2f}K\n")
-                f.write(f"    Processing time: {result['stats_4x']['total_time']:.2f}s\n")
+        # Temperature preservation analysis
+        f.write(f"\nTemperature preservation analysis:\n")
 
-                # 8x stats
-                f.write(f"\n  8x Super-Resolution:\n")
-                f.write(f"    Final shape: {result['metadata']['sr_8x_shape']}\n")
-                f.write(f"    Temperature: Min={np.min(result['sr_8x']):.2f}K, "
-                        f"Max={np.max(result['sr_8x']):.2f}K, "
-                        f"Avg={np.mean(result['sr_8x']):.2f}K\n")
-                f.write(f"    Processing time: {result['stats_8x']['total_time']:.2f}s\n")
+        temp_diffs_4x = []
+        temp_diffs_8x = []
 
-            # Summary statistics
-            f.write("\n" + "=" * 80 + "\n")
-            f.write("SUMMARY STATISTICS\n")
-            f.write("-" * 80 + "\n")
+        for result in results:
+            orig_avg = np.mean(result['original'])
+            sr4x_avg = np.mean(result['sr_4x'])
+            sr8x_avg = np.mean(result['sr_8x'])
 
-            # Average processing times
-            avg_4x_time = np.mean([r['stats_4x']['total_time'] for r in results])
-            avg_8x_time = np.mean([r['stats_8x']['total_time'] for r in results])
+            temp_diffs_4x.append(abs(sr4x_avg - orig_avg))
+            temp_diffs_8x.append(abs(sr8x_avg - orig_avg))
 
-            f.write(f"\nAverage processing times:\n")
-            f.write(f"  4x SR: {avg_4x_time:.2f}s\n")
-            f.write(f"  8x SR: {avg_8x_time:.2f}s\n")
+        f.write(f"  4x SR average temperature difference: {np.mean(temp_diffs_4x):.2f}K\n")
+        f.write(f"  8x SR average temperature difference: {np.mean(temp_diffs_8x):.2f}K\n")
 
-            # Temperature preservation analysis
-            f.write(f"\nTemperature preservation analysis:\n")
+        f.write("\n" + "=" * 80 + "\n")
+        f.write("Report generated successfully\n")
 
-            temp_diffs_4x = []
-            temp_diffs_8x = []
+    logger.info(f"Statistics report saved to: {report_path}")
 
-            for result in results:
-                orig_avg = np.mean(result['original'])
-                sr4x_avg = np.mean(result['sr_4x'])
-                sr8x_avg = np.mean(result['sr_8x'])
 
-                temp_diffs_4x.append(abs(sr4x_avg - orig_avg))
-                temp_diffs_8x.append(abs(sr8x_avg - orig_avg))
+def main():
+    """Main function for cascaded Pure SwinIR temperature SR"""
+    import argparse
 
-            f.write(f"  4x SR average temperature difference: {np.mean(temp_diffs_4x):.2f}K\n")
-            f.write(f"  8x SR average temperature difference: {np.mean(temp_diffs_8x):.2f}K\n")
+    parser = argparse.ArgumentParser(description='Cascaded Pure SwinIR Temperature Super-Resolution')
+    parser.add_argument('--npz-dir', type=str, required=True,
+                        help='Directory containing NPZ files')
+    parser.add_argument('--model-path', type=str, required=True,
+                        help='Path to trained Pure SwinIR model checkpoint')
+    parser.add_argument('--num-samples', type=int, default=5,
+                        help='Number of samples to process (default: 5)')
+    parser.add_argument('--save-dir', type=str, default='./cascaded_swinir_results',
+                        help='Directory to save results')
+    parser.add_argument('--overlap-ratio', type=float, default=0.75,
+                        help='Overlap ratio for patches (default: 0.75)')
 
-            f.write("\n" + "=" * 80 + "\n")
-            f.write("Report generated successfully\n")
+    args = parser.parse_args()
 
-        logger.info(f"Statistics report saved to: {report_path}")
+    logger.info("=" * 80)
+    logger.info("CASCADED PURE SWINIR TEMPERATURE SUPER-RESOLUTION")
+    logger.info("=" * 80)
+    logger.info(f"NPZ directory: {args.npz_dir}")
+    logger.info(f"Model path: {args.model_path}")
+    logger.info(f"Number of samples: {args.num_samples}")
+    logger.info(f"Save directory: {args.save_dir}")
+    logger.info("=" * 80)
 
-    def main():
-        """Main function for cascaded Pure SwinIR temperature SR"""
-        import argparse
+    # Check if model exists
+    if not os.path.exists(args.model_path):
+        logger.error(f"Model not found: {args.model_path}")
+        sys.exit(1)
 
-        parser = argparse.ArgumentParser(description='Cascaded Pure SwinIR Temperature Super-Resolution')
-        parser.add_argument('--npz-dir', type=str, required=True,
-                            help='Directory containing NPZ files')
-        parser.add_argument('--model-path', type=str, required=True,
-                            help='Path to trained Pure SwinIR model checkpoint')
-        parser.add_argument('--num-samples', type=int, default=5,
-                            help='Number of samples to process (default: 5)')
-        parser.add_argument('--save-dir', type=str, default='./cascaded_swinir_results',
-                            help='Directory to save results')
-        parser.add_argument('--overlap-ratio', type=float, default=0.75,
-                            help='Overlap ratio for patches (default: 0.75)')
+    # Process samples
+    try:
+        results = cascaded_pure_swinir_temperature_sr(
+            npz_dir=args.npz_dir,
+            model_path=args.model_path,
+            num_samples=args.num_samples,
+            save_dir=args.save_dir
+        )
 
-        args = parser.parse_args()
-
-        logger.info("=" * 80)
-        logger.info("CASCADED PURE SWINIR TEMPERATURE SUPER-RESOLUTION")
-        logger.info("=" * 80)
-        logger.info(f"NPZ directory: {args.npz_dir}")
-        logger.info(f"Model path: {args.model_path}")
-        logger.info(f"Number of samples: {args.num_samples}")
-        logger.info(f"Save directory: {args.save_dir}")
+        logger.info("\n" + "=" * 80)
+        logger.info("CASCADED PROCESSING COMPLETED SUCCESSFULLY!")
+        logger.info(f"Processed {len(results)} samples with 4x and 8x upscaling")
+        logger.info(f"Results saved to: {args.save_dir}")
         logger.info("=" * 80)
 
-        # Check if model exists
-        if not os.path.exists(args.model_path):
-            logger.error(f"Model not found: {args.model_path}")
-            sys.exit(1)
+    except Exception as e:
+        logger.error(f"Error during processing: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    finally:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            gc.collect()
 
-        # Process samples
-        try:
-            results = cascaded_pure_swinir_temperature_sr(
-                npz_dir=args.npz_dir,
-                model_path=args.model_path,
-                num_samples=args.num_samples,
-                save_dir=args.save_dir
-            )
 
-            logger.info("\n" + "=" * 80)
-            logger.info("CASCADED PROCESSING COMPLETED SUCCESSFULLY!")
-            logger.info(f"Processed {len(results)} samples with 4x and 8x upscaling")
-            logger.info(f"Results saved to: {args.save_dir}")
-            logger.info("=" * 80)
-
-        except Exception as e:
-            logger.error(f"Error during processing: {e}")
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
-        finally:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                gc.collect()
-
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
