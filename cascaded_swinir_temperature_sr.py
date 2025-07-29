@@ -397,29 +397,38 @@ def cascaded_pure_swinir_temperature_sr(npz_dir: str, model_path: str, num_sampl
     results = []
     processed_count = 0
 
+    # Add these debug prints right after loading the NPZ file:
     with np.load(last_file, allow_pickle=True) as data:
+        print(f"DEBUG: Keys in NPZ file: {list(data.keys())}")  # ADD THIS
+
         # Check data format
         if 'swath_array' in data:
             swath_array = data['swath_array']
+            print(f"DEBUG: Using swath_array, shape: {swath_array.shape}")  # ADD THIS
         elif 'swaths' in data:
             swath_array = data['swaths']
+            print(f"DEBUG: Using swaths, shape: {swath_array.shape}")  # ADD THIS
         else:
             # Single temperature array
             temperature = data['temperature'].astype(np.float32)
             metadata = data['metadata'].item() if hasattr(data['metadata'], 'item') else data['metadata']
             swath_array = [{'temperature': temperature, 'metadata': metadata}]
+            print(f"DEBUG: Using single temperature array")  # ADD THIS
 
         total_swaths = len(swath_array)
+        print(f"DEBUG: Total swaths: {total_swaths}")  # ADD THIS
         logger.info(f"Total swaths in file: {total_swaths}")
 
         # Process from the end of file (same as the other project)
         for idx in range(total_swaths - 1, max(0, total_swaths - 100), -1):
+            print(f"DEBUG: Trying swath index {idx}")  # ADD THIS
             if processed_count >= num_samples:
                 break
 
             try:
                 swath = swath_array[idx].item() if hasattr(swath_array[idx], 'item') else swath_array[idx]
-
+                print(f"DEBUG: Swath type: {type(swath)}")  # ADD THIS
+                print(f"DEBUG: Swath keys: {swath.keys() if isinstance(swath, dict) else 'Not a dict'}")  # ADD THIS
                 if 'temperature' not in swath:
                     continue
 
